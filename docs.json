@@ -115,6 +115,7 @@
               "models.rnn.html",
               "models.softs.html",
               "models.softssharp.html",
+              "models.srsnet.html",
               "models.stemgnn.html",
               "models.tcn.html",
               "models.tft.html",

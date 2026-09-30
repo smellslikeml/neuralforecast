@@ -1,0 +1,339 @@
+---
+description: >-
+  SRSNet: channel-independent patch model with Selective Representation Spaces (learnable patch selection and dynamic reassembly) for time series forecasting.
+output-file: models.srsnet.html
+title: SRSNet
+---
+
+SRSNet is a channel-independent patch model, like PatchTST, that replaces the fixed patch grid with a Selective Representation Spaces (SRS) module: a learned patch *selection* over all stride-one candidate patches and a dynamic *reassembly* of the selected patches, so the model attends to the most informative patch representations. The original (fixed-stride) and the reconstructed representation spaces are embedded and combined with a learnable adaptive weight.
+
+## 1. SRSNet
+
+### `SRSNet`
+
+```python
+SRSNet(
+    h,
+    input_size,
+    stat_exog_list=None,
+    hist_exog_list=None,
+    futr_exog_list=None,
+    exclude_insample_y=False,
+    patch_len=24,
+    stride=24,
+    d_model=512,
+    hidden_size=128,
+    dropout=0.2,
+    alpha=2.0,
+    pos=True,
+    head_mode="linear",
+    revin=True,
+    revin_affine=True,
+    revin_subtract_last=False,
+    loss=MAE(),
+    valid_loss=None,
+    max_steps=5000,
+    learning_rate=0.0001,
+    num_lr_decays=-1,
+    early_stop_patience_steps=-1,
+    val_monitor="ptl/val_loss",
+    val_check_steps=100,
+    batch_size=32,
+    valid_batch_size=None,
+    windows_batch_size=1024,
+    inference_windows_batch_size=1024,
+    start_padding_enabled=False,
+    training_data_availability_threshold=0.0,
+    step_size=1,
+    scaler_type="identity",
+    random_seed=1,
+    drop_last_loader=False,
+    alias=None,
+    optimizer=None,
+    optimizer_kwargs=None,
+    lr_scheduler=None,
+    lr_scheduler_kwargs=None,
+    dataloader_kwargs=None,
+    **trainer_kwargs
+)
+```
+
+Bases: <code>[BaseModel](#neuralforecast.common._base_model.BaseModel)</code>
+
+SRSNet
+
+The SRSNet model is a channel-independent patch-based model for univariate time series
+forecasting. Like PatchTST, it segments the lookback window into patches and predicts
+through a linear flatten head, but it replaces the fixed patch grid with a Selective
+Representation Spaces (SRS) module: a learned patch *selection* over all stride-one
+candidate patches and a dynamic *reassembly* of the selected patches. Both the original
+(fixed-stride) and the reconstructed representation spaces are embedded and combined
+with a learnable adaptive weight, so the model attends to the most informative patch
+representations rather than a fixed grid.
+
+Ported with attribution from the MIT-licensed reference implementation
+[decisionintelligence/SRSNet](https://github.com/decisionintelligence/SRSNet), adapted
+to neuralforecast (neuralforecast's `BaseModel` owns the training loop, data windowing,
+scaling and loss; neuralforecast's own `RevIN` is reused).
+
+**Parameters:**
+
+Name | Type | Description | Default
+---- | ---- | ----------- | -------
+`h` | <code>[int](#int)</code> | forecast horizon. | *required*
+`input_size` | <code>[int](#int)</code> | autorregresive inputs size, y=[1,2,3,4] input_size=2 -> y\_[t-2:t]=[1,2]. | *required*
+`stat_exog_list` | <code>str list</code> | static exogenous columns. | <code>None</code>
+`hist_exog_list` | <code>str list</code> | historic exogenous columns. | <code>None</code>
+`futr_exog_list` | <code>str list</code> | future exogenous columns. | <code>None</code>
+`exclude_insample_y` | <code>[bool](#bool)</code> | the model skips the autoregressive features y[t-input_size:t] if True. | <code>False</code>
+`patch_len` | <code>[int](#int)</code> | length of patch. Note: patch_len = min(patch_len, input_size). | <code>24</code>
+`stride` | <code>[int](#int)</code> | stride of the original (fixed-stride) patch view. | <code>24</code>
+`d_model` | <code>[int](#int)</code> | units of the patch value embeddings (and of the flatten head input). | <code>512</code>
+`hidden_size` | <code>[int](#int)</code> | units of the SRS scorers' hidden layer (patch selection and reassembly). | <code>128</code>
+`dropout` | <code>[float](#float)</code> | dropout rate for the SRS patch embedding and the flatten head. | <code>0.2</code>
+`alpha` | <code>[float](#float)</code> | initial value of the adaptive weight between the original and the reconstructed representation spaces. | <code>2.0</code>
+`pos` | <code>[bool](#bool)</code> | bool to add a sinusoidal positional embedding on top of the patch embeddings. | <code>True</code>
+`head_mode` | <code>[str](#str)</code> | flatten head type from ['linear', 'mlp']. | <code>'linear'</code>
+`revin` | <code>[bool](#bool)</code> | bool to use RevIn. | <code>True</code>
+`revin_affine` | <code>[bool](#bool)</code> | bool to use affine in RevIn. | <code>True</code>
+`revin_subtract_last` | <code>[bool](#bool)</code> | bool to use subtract last in RevIn. | <code>False</code>
+`loss` | <code>PyTorch module</code> | instantiated train loss class from [losses collection](./losses.pytorch.html). | <code>[MAE](#neuralforecast.losses.pytorch.MAE)()</code>
+`valid_loss` | <code>PyTorch module</code> | instantiated valid loss class from [losses collection](./losses.pytorch.html). | <code>None</code>
+`max_steps` | <code>[int](#int)</code> | maximum number of training steps. | <code>5000</code>
+`learning_rate` | <code>[float](#float)</code> | learning rate between (0, 1). | <code>0.0001</code>
+`num_lr_decays` | <code>[int](#int)</code> | number of learning rate decays, evenly distributed across max_steps. | <code>-1</code>
+`early_stop_patience_steps` | <code>[int](#int)</code> | number of validation iterations before early stopping. | <code>-1</code>
+`val_monitor` | <code>[str](#str)</code> | metric to monitor for early stopping. Valid options: "ptl/val_loss", "valid_loss", "train_loss". Default: "ptl/val_loss". | <code>'ptl/val_loss'</code>
+`val_check_steps` | <code>[int](#int)</code> | number of training steps between every validation loss check. | <code>100</code>
+`batch_size` | <code>[int](#int)</code> | number of different series in each batch. | <code>32</code>
+`valid_batch_size` | <code>[int](#int)</code> | number of different series in each validation and test batch, if None uses batch_size. | <code>None</code>
+`windows_batch_size` | <code>[int](#int)</code> | number of windows to sample in each training batch, default uses all. | <code>1024</code>
+`inference_windows_batch_size` | <code>[int](#int)</code> | number of windows to sample in each inference batch. | <code>1024</code>
+`start_padding_enabled` | <code>[bool](#bool)</code> | if True, the model will pad the time series with zeros at the beginning, by input size. | <code>False</code>
+`training_data_availability_threshold` | <code>[Union](#Union)\[[float](#float), [List](#List)\[[float](#float)\]\]</code> | minimum fraction of valid data points required for training windows. Single float applies to both insample and outsample; list of two floats specifies [insample_fraction, outsample_fraction]. Default 0.0 allows windows with only 1 valid data point (current behavior). | <code>0.0</code>
+`step_size` | <code>[int](#int)</code> | step size between each window of temporal data. | <code>1</code>
+`scaler_type` | <code>[str](#str)</code> | type of scaler for temporal inputs normalization see [temporal scalers](https://github.com/Nixtla/neuralforecast/blob/main/neuralforecast/common/_scalers.py). | <code>'identity'</code>
+`random_seed` | <code>[int](#int)</code> | random_seed for pytorch initializer and numpy generators. | <code>1</code>
+`drop_last_loader` | <code>[bool](#bool)</code> | if True `TimeSeriesDataLoader` drops last non-full batch. | <code>False</code>
+`alias` | <code>[str](#str)</code> | optional, Custom name of the model. | <code>None</code>
+`optimizer` | <code>Subclass of 'torch.optim.Optimizer'</code> | optional, user specified optimizer instead of the default choice (Adam). | <code>None</code>
+`optimizer_kwargs` | <code>[dict](#dict)</code> | optional, list of parameters used by the user specified `optimizer`. | <code>None</code>
+`lr_scheduler` | <code>Subclass of 'torch.optim.lr_scheduler.LRScheduler'</code> | optional, user specified lr_scheduler instead of the default choice (StepLR). | <code>None</code>
+`lr_scheduler_kwargs` | <code>[dict](#dict)</code> | optional, list of parameters used by the user specified `lr_scheduler`. | <code>None</code>
+`dataloader_kwargs` | <code>[dict](#dict)</code> | optional, list of parameters passed into the PyTorch Lightning dataloader by the `TimeSeriesDataLoader`. | <code>None</code>
+`**trainer_kwargs` | <code>[int](#int)</code> | keyword trainer arguments inherited from [PyTorch Lightning's trainer](https://pytorch-lightning.readthedocs.io/en/stable/api/pytorch_lightning.trainer.trainer.Trainer.html?highlight=trainer). | <code>{}</code>
+
+<details class="references" open markdown="1">
+<summary>References</summary>
+
+- [Enhancing Time Series Forecasting through Selective Representation Spaces: A Patch Perspective](https://arxiv.org/abs/2510.14510)
+- [decisionintelligence/SRSNet reference implementation (MIT license)](https://github.com/decisionintelligence/SRSNet)
+
+</details>
+
+#### `SRSNet.fit`
+
+```python
+fit(
+    dataset, val_size=0, test_size=0, random_seed=None, distributed_config=None
+)
+```
+
+Fit.
+
+The `fit` method, optimizes the neural network's weights using the
+initialization parameters (`learning_rate`, `windows_batch_size`, ...)
+and the `loss` function as defined during the initialization.
+Within `fit` we use a PyTorch Lightning `Trainer` that
+inherits the initialization's `self.trainer_kwargs`, to customize
+its inputs, see [PL's trainer arguments](https://pytorch-lightning.readthedocs.io/en/stable/api/pytorch_lightning.trainer.trainer.Trainer.html?highlight=trainer).
+
+The method is designed to be compatible with SKLearn-like classes
+and in particular to be compatible with the StatsForecast library.
+
+By default the `model` is not saving training checkpoints to protect
+disk memory, to get them change `enable_checkpointing=True` in `__init__`.
+
+**Parameters:**
+
+Name | Type | Description | Default
+---- | ---- | ----------- | -------
+`dataset` | <code>[TimeSeriesDataset](#TimeSeriesDataset)</code> | NeuralForecast's `TimeSeriesDataset`, see [documentation](./tsdataset.html). | *required*
+`val_size` | <code>[int](#int)</code> | Validation size for temporal cross-validation. | <code>0</code>
+`random_seed` | <code>[int](#int)</code> | Random seed for pytorch initializer and numpy generators, overwrites model.__init__'s. | <code>None</code>
+`test_size` | <code>[int](#int)</code> | Test size for temporal cross-validation. | <code>0</code>
+
+**Returns:**
+
+Type | Description
+---- | -----------
+| None
+
+#### `SRSNet.predict`
+
+```python
+predict(
+    dataset,
+    test_size=None,
+    step_size=1,
+    random_seed=None,
+    quantiles=None,
+    h=None,
+    explainer_config=None,
+    **data_module_kwargs
+)
+```
+
+Predict.
+
+Neural network prediction with PL's `Trainer` execution of `predict_step`.
+
+**Parameters:**
+
+Name | Type | Description | Default
+---- | ---- | ----------- | -------
+`dataset` | <code>[TimeSeriesDataset](#TimeSeriesDataset)</code> | NeuralForecast's `TimeSeriesDataset`, see [documentation](./tsdataset.html). | *required*
+`test_size` | <code>[int](#int)</code> | Test size for temporal cross-validation. | <code>None</code>
+`step_size` | <code>[int](#int)</code> | Step size between each window. | <code>1</code>
+`random_seed` | <code>[int](#int)</code> | Random seed for pytorch initializer and numpy generators, overwrites model.__init__'s. | <code>None</code>
+`quantiles` | <code>[list](#list)</code> | Target quantiles to predict. | <code>None</code>
+`h` | <code>[int](#int)</code> | Prediction horizon, if None, uses the model's fitted horizon. Defaults to None. | <code>None</code>
+`explainer_config` | <code>[dict](#dict)</code> | configuration for explanations. | <code>None</code>
+`**data_module_kwargs` | <code>[dict](#dict)</code> | PL's TimeSeriesDataModule args, see [documentation](https://pytorch-lightning.readthedocs.io/en/1.6.1/extensions/datamodules.html#using-a-datamodule). | <code>{}</code>
+
+**Returns:**
+
+Type | Description
+---- | -----------
+| None
+
+### Usage example
+
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from neuralforecast import NeuralForecast
+from neuralforecast.models import SRSNet
+from neuralforecast.utils import AirPassengersPanel
+from neuralforecast.losses.pytorch import MAE
+
+Y_train_df = AirPassengersPanel[AirPassengersPanel.ds<AirPassengersPanel['ds'].values[-12]].reset_index(drop=True)
+Y_test_df = AirPassengersPanel[AirPassengersPanel.ds>=AirPassengersPanel['ds'].values[-12]].reset_index(drop=True)
+
+model = SRSNet(h=12,
+               input_size=104,
+               patch_len=16,
+               stride=8,
+               d_model=64,
+               hidden_size=128,
+               dropout=0.2,
+               alpha=2.0,
+               pos=True,
+               loss=MAE(),
+               max_steps=500,
+               early_stop_patience_steps=3,
+               batch_size=32)
+
+fcst = NeuralForecast(models=[model], freq='ME')
+fcst.fit(df=Y_train_df)
+forecasts = fcst.predict(futr_df=Y_test_df)
+
+fig, ax = plt.subplots(1, 1, figsize = (20, 7))
+Y_hat_df = forecasts.reset_index(drop=False).drop(columns=['unique_id','ds'])
+plot_df = pd.concat([Y_test_df, Y_hat_df], axis=1)
+plot_df = pd.concat([Y_train_df, plot_df])
+
+plot_df = plot_df[plot_df.unique_id=='Airline1'].drop('unique_id', axis=1)
+plt.plot(plot_df['ds'], plot_df['y'], c='black', label='True')
+plt.plot(plot_df['ds'], plot_df['SRSNet'], c='blue', label='Forecast')
+ax.set_title('AirPassengers Forecast', fontsize=22)
+ax.set_ylabel('Monthly Passengers', fontsize=20)
+ax.set_xlabel('Year', fontsize=20)
+ax.legend(prop={'size': 15})
+ax.grid()
+```
+
+## 2. Auxiliary functions
+
+### `PositionalEmbedding`
+
+```python
+PositionalEmbedding(d_model, max_len=5000)
+```
+
+Bases: <code>[Module](#torch.nn.Module)</code>
+
+Sinusoidal positional embedding for the patch (representation) dimension.
+
+### `SRS`
+
+```python
+SRS(
+    d_model,
+    patch_len,
+    stride,
+    seq_len,
+    dropout,
+    hidden_size,
+    alpha=2.0,
+    pos=True,
+)
+```
+
+Bases: <code>[Module](#torch.nn.Module)</code>
+
+Selective Representation Spaces (SRS) patch embedding.
+
+Instead of a single fixed patch grid, the padded sequence is encoded into two
+representation spaces: the `original` view given by the fixed-stride patching,
+and a `reconstruction` view whose patches are dynamically selected among all
+stride-one candidate patches (learned scorer) and reassembled in a learned order
+(shuffle scorer). Both views are linearly embedded and combined with a learnable
+adaptive weight (element-wise sigmoid of `alpha`), plus a positional embedding.
+
+### `FlattenHead`
+
+```python
+FlattenHead(n_vars, nf, target_window, head_dropout=0, mode='linear')
+```
+
+Bases: <code>[Module](#torch.nn.Module)</code>
+
+FlattenHead
+
+Flattens the `[bs x nvars x d_model x patch_num]` patch representations and
+projects them to the target window.
+
+### `SRSNet_backbone`
+
+```python
+SRSNet_backbone(
+    c_in,
+    c_out,
+    input_size,
+    h,
+    patch_len,
+    stride,
+    d_model=512,
+    dropout=0.2,
+    hidden_size=128,
+    alpha=2.0,
+    pos=True,
+    head_mode="linear",
+    revin=True,
+    affine=True,
+    subtract_last=False,
+)
+```
+
+Bases: <code>[Module](#torch.nn.Module)</code>
+
+SRSNet_backbone
+
+Channel-independent backbone: RevIN -> SRS patch embedding -> FlattenHead -> RevIN.
+
+## 3. References
+
+- [Enhancing Time Series Forecasting through Selective Representation Spaces: A Patch Perspective (arXiv:2510.14510)](https://arxiv.org/abs/2510.14510)
+- [decisionintelligence/SRSNet reference implementation (MIT license)](https://github.com/decisionintelligence/SRSNet)
