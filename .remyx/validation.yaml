@@ -1,0 +1,128 @@
+question:
+  kind: capability
+  ask: "maintainer @smellslikm: 'validate on GPU with the accuracy-parity vs PatchTST' — does SRSNet/PatchTST mean test-MSE ratio stay <= 1.0 on ETTh1/ETTh2/ETTm1/ETTm2/Weather at h=96/192/336/720?"
+baseline: none
+benchmarks:
+  - name: srsnet-patchtst-long-horizon
+    suite:
+      notebook:
+        path: "experiments/srsnet/run_srsnet.ipynb"
+        packages: [datasetsforecast]
+    scorer: srsnet_patchtst_mse_ratio
+    baseline: none
+    policy:
+      guardrail_veto: true
+    metrics:
+      - name: srsnet_patchtst_mse_ratio
+        direction: min
+        threshold: 1.0
+        role: target
+        bar: goal
+        reads_as: "SRSNet MSE / PatchTST MSE averaged over the 20 dataset-horizon cells; 1.0 is exact parity, below 1.0 backs the paper's stronger claim"
+      - name: srsnet_finite_pred_rate
+        direction: max
+        threshold: 1.0
+        role: guardrail
+        bar: sanity
+        reads_as: "Share of SRSNet held-out forecasts that are all-finite; any NaN/Inf fails it (the PR's own unit test asserts finiteness)"
+      - name: eval_cells
+        direction: max
+        threshold: 20
+        role: guardrail
+        bar: sanity
+        reads_as: "Dataset x horizon cells actually measured, out of the 20 the protocol defines (5 datasets x 4 horizons)"
+      - name: srsnet_mse
+        direction: min
+        threshold: 5.0
+        role: diagnostic
+        bar: sanity
+        reads_as: "SRSNet mean held-out MSE over the grid, the repo protocol's own metric on standardized targets (ETT/weather cells run ~0.15-1.0)"
+      - name: patchtst_mse
+        direction: min
+        threshold: 5.0
+        role: diagnostic
+        bar: sanity
+        reads_as: "Measured PatchTST arm's mean held-out MSE on the identical windows; this is the parity denominator"
+      - name: srsnet_mae
+        direction: min
+        threshold: 5.0
+        role: diagnostic
+        bar: sanity
+        reads_as: "SRSNet mean held-out MAE over the grid, second paper metric"
+      - name: patchtst_mae
+        direction: min
+        threshold: 5.0
+        role: diagnostic
+        bar: sanity
+        reads_as: "Measured PatchTST arm's mean held-out MAE on the identical windows"
+      - name: srsnet_patchtst_mae_ratio
+        direction: min
+        threshold: 2.0
+        role: diagnostic
+        bar: sanity
+        reads_as: "SRSNet MAE / PatchTST MAE; shows whether MAE tracks the MSE verdict"
+      - name: srs_alpha_gap
+        direction: max
+        threshold: 1.0
+        role: diagnostic
+        bar: sanity
+        reads_as: "Mean |sigmoid(alpha) - 0.881| after training; 0 means the fusion weight never moved and the SRS view is inert"
+      - name: srsnet_patchtst_fit_time_ratio
+        direction: min
+        role: cost
+        reads_as: "SRSNet fit seconds / PatchTST fit seconds averaged over cells; the SRS scorers' compute overhead (~5M MACs per channel-window), cost context only"
+compute:
+  tier: gpu
+  # one arm = 40 fits (2 models x 20 cells) at max_steps=3000, windows_batch_size 256:
+  # ~2-4 min/fit on one GPU + pinned dataset download + rolling test cross-validation
+  # ~= 3 h; 14400 s leaves honest margin. REMYX_SMOKE=1 shrinks to ETTh1/h=96/few steps.
+  timeout_s: 14400
+loop:
+  max_iterations: 8
+  fix_code: true
+held_constant:
+  - "input_size=512 for both models (patch-papers' standard lookback; pinned equal so the arms differ only by the SRS module)"
+  - "loss=MSE, max_steps=3000, no early stopping, library batch/windows defaults, random_seed=1 for both models"
+  - "train/test splits and rolling non-overlapping test windows from the repo long-horizon loader groups ETTh1/ETTh2/ETTm1/ETTm2/Weather at h in {96,192,336,720}"
+  - "SRSNet at docs defaults (patch_len=16, stride=8, d_model=64, hidden_size=128, dropout=0.2, alpha=2.0, pos=True, revin=True) vs PatchTST at its library defaults; scaler_type=None on both"
+  - "MSE/MAE computed with utilsforecast.losses on the same held-out tail windows"
+avoid:
+  - "no AutoSRSNet/AutoPatchTST search on either arm — tuned-vs-fixed would confound the parity question"
+  - "no quoted PatchTST number as baseline — the repo has no canonical row (maturity R2); the baseline is measured inside the run"
+  - "no RevIN + scaler_type double normalization — scaler_type stays None on both arms"
+  - "no fake parity for the absent model — the PR-added module is imported defensively (ImportError/AttributeError caught for exactly the SRSNet symbol): on an arm without the change the SRSNet fits are skipped, its metrics degrade to the 1e9 failure value and eval_cells=0 fails the guardrail while PatchTST is still measured; dataset-load or training failures still crash with tracebacks rather than printing zeroed metrics"
+  - "no stand-in datasets — if the Weather group is absent from the repo's own loader the run crashes rather than substituting another dataset"
+  - "no wall-clock gating — the fit-time ratio is cost context on the dedicated GPU, never a threshold"
+provenance:
+  srsnet_patchtst_mse_ratio: "maintainer_comment:@smellslikm (accuracy-parity vs PatchTST on GPU)"
+  srsnet_mse: "protocol_doc:experiments/long_horizon/README.md (MSE per dataset per horizon)"
+  patchtst_mse: "protocol_doc:experiments/long_horizon/README.md"
+  srsnet_mae: "protocol_doc:experiments/long_horizon/README.md (MAE per dataset per horizon)"
+  patchtst_mae: "protocol_doc:experiments/long_horizon/README.md"
+  srsnet_finite_pred_rate: "pr_diff:tests/test_models/test_srsnet.py (asserts forecast finiteness)"
+  srs_alpha_gap: "pr_diff:neuralforecast/models/srsnet.py (alpha default 2.0, sigmoid(2.0)=0.881)"
+  eval_cells: "user_guidance (ETT+Weather at 96/192/336/720)"
+  held_constant: "protocol_doc:experiments/long_horizon/README.md"
+  suite: "synthesized (mirrors experiments/long_horizon/run_nhits.py shape, placed in the experiments/srsnet slot repo rules require for a new method)"
+report:
+  headline: "SRSNet trains and forecasts end-to-end on the repo's long-horizon protocol; parity vs the measured PatchTST arm is read off the MSE ratio against 1.0"
+  findings:
+    - "SRSNet/PatchTST mean test-MSE ratio = {srsnet_patchtst_mse_ratio} (<=1.0 parity, <1.0 supports the paper's SOTA direction)"
+    - "Absolute means: SRSNet MSE {srsnet_mse} vs PatchTST {patchtst_mse}; MAE {srsnet_mae} vs {patchtst_mae} (MAE ratio {srsnet_patchtst_mae_ratio})"
+    - "{srsnet_finite_pred_rate:%} of SRSNet held-out forecasts are finite"
+    - "{eval_cells} of 20 dataset-horizon cells measured"
+    - "Fusion weight moved |sigmoid(alpha) - 0.881| = {srs_alpha_gap} from init (0 means the SRS view never engaged)"
+    - "SRSNet fit time = {srsnet_patchtst_fit_time_ratio}x PatchTST's (scorer overhead; cost context only)"
+  establishes:
+    - "that the ported SRSNet trains under neuralforecast's BaseModel on the repo's real long-horizon datasets and reaches mean MSE at or below a PatchTST trained under identical lookback/loss/steps/seed"
+    - "that the SRS fusion weight trains away from its 0.881 init, i.e. the new module is engaged rather than inert"
+  does_not_establish:
+    - "the paper's SOTA ranking (its numbers come from the TFB/ts_benchmark harness with its own LR schedule, epochs and fixed RevIN; only the ETT+Weather subset is testable here)"
+    - "the plug-and-play claim that SRS improves other patch models (that module path is not ported)"
+    - "any latency, throughput or memory advantage (fit-time ratio is context, not a benchmark)"
+  not_measured:
+    - "tuned comparison AutoSRSNet vs AutoPatchTST with equal search budgets"
+    - "datasets beyond ETTh1/ETTh2/ETTm1/ETTm2/Weather from the paper's multi-domain suite"
+    - "parameter-count parity (the scorers add ~20.6k params per SRS layer — bookkeeping only, never gated)"
+  caveat: "Same architecture does not transfer the published row: the port trains under neuralforecast BaseModel (windows_batch_size sampling, no TFB LR schedule), so the PatchTST arm is measured under the identical recipe rather than quoted."
+  next: "If the ratio clears 1.0 at fixed defaults, rerun with equal Auto-search budgets (AutoSRSNet vs AutoPatchTST) on the same grid to test the stronger tuned claim."
