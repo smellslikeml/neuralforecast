@@ -59,6 +59,7 @@ from neuralforecast.models import (
     VanillaTransformer,
     XLinear,
     iTransformer,
+    SRSNet,
     xLSTM,
 )
 from neuralforecast.tsdataset import (
@@ -285,6 +286,8 @@ MODEL_FILENAME_DICT = {
     "autoxlstm": xLSTM,
     "xlinear": XLinear,
     "autoxlinear": XLinear,
+    "srsnet": SRSNet,
+    "autosrsnet": SRSNet,
 }
 
 
