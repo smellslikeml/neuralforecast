@@ -84,6 +84,7 @@ Models designed for specific forecasting scenarios:
 - `AutoStemGNN`: [Graph neural network for multivariate forecasting](./models.stemgnn.html)
 - `AutoSOFTS`: [Spectral Optimal Fourier Transform model](./models.softs.html)
 - `AutoSOFTSSharp`: [SOFTS extension with stochastic variable-position encoding](./models.softssharp.html)
+- `SRSNet`: [Channel-independent patch model with Selective Representation Spaces](./models.srsnet.html)
 - `AutoTimeMixer`: [Temporal mixing architecture](./models.timemixer.html)
 - `AutoRMoK`: [Random Mixture of Kernels](./models.rmok.html)
 - `AutoHINT`: [Hierarchical forecasting with automatic reconciliation](./models.hint.html)

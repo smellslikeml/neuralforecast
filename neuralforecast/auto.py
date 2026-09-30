@@ -5,7 +5,7 @@ __all__ = ['AutoRNN', 'AutoLSTM', 'AutoGRU', 'AutoTCN', 'AutoDeepAR', 'AutoDilat
            'AutoNBEATS', 'AutoNBEATSx', 'AutoNHITS', 'AutoDLinear', 'AutoNLinear', 'AutoTiDE', 'AutoDeepNPTS',
            'AutoKAN', 'AutoTFT', 'AutoVanillaTransformer', 'AutoInformer', 'AutoAutoformer', 'AutoFEDformer',
            'AutoPatchTST', 'AutoiTransformer', 'AutoTimeXer', 'AutoTimesNet', 'AutoStemGNN', 'AutoHINT', 'AutoTSMixer',
-           'AutoTSMixerx', 'AutoMLPMultivariate', 'AutoSOFTS', 'AutoSOFTSSharp', 'AutoTimeMixer', 'AutoRMoK',
+           'AutoTSMixerx', 'AutoMLPMultivariate', 'AutoSOFTS', 'AutoSOFTSSharp', 'AutoSRSNet', 'AutoTimeMixer', 'AutoRMoK',
            'AutoXLinear', 'RayOptions', 'OptunaOptions']
 
 
@@ -40,6 +40,7 @@ from .models.rmok import RMoK
 from .models.rnn import RNN
 from .models.softs import SOFTS
 from .models.softssharp import SOFTSSharp
+from .models.srsnet import SRSNet
 from .models.stemgnn import StemGNN
 from .models.tcn import TCN
 from .models.tft import TFT
@@ -1755,6 +1756,85 @@ class AutoPatchTST(BaseAuto):
 
         super(AutoPatchTST, self).__init__(
             cls_model=PatchTST,
+            h=h,
+            loss=loss,
+            valid_loss=valid_loss,
+            config=config,
+            search_alg=search_alg,
+            num_samples=num_samples,
+            time_budget=time_budget,
+            refit_with_val=refit_with_val,
+            cpus=cpus,
+            gpus=gpus,
+            verbose=verbose,
+            alias=alias,
+            backend=backend,
+            callbacks=callbacks,
+            ray_options=ray_options,
+            optuna_options=optuna_options,
+        )
+
+    @classmethod
+    def get_default_config(cls, h, backend, n_series=None):
+        config = cls.default_config.copy()
+        config["input_size"] = tune.choice(
+            [h * x for x in config["input_size_multiplier"]]
+        )
+        config["step_size"] = tune.choice([1, h])
+        del config["input_size_multiplier"]
+        if backend == "optuna":
+            config = cls._ray_config_to_optuna(config)
+
+        return config
+
+
+class AutoSRSNet(BaseAuto):
+
+    default_config = {
+        "input_size_multiplier": [1, 2, 3],
+        "h": None,
+        "d_model": tune.choice([16, 128, 256]),
+        "hidden_size": tune.choice([64, 128, 256]),
+        "patch_len": tune.choice([16, 24]),
+        "stride": tune.choice([8, 16]),
+        "dropout": tune.choice([0.0, 0.1, 0.2]),
+        "alpha": tune.choice([1.0, 2.0, 3.0]),
+        "learning_rate": tune.loguniform(1e-4, 1e-1),
+        "scaler_type": tune.choice([None, "robust", "standard"]),
+        "revin": tune.choice([False, True]),
+        "max_steps": tune.choice([500, 1000, 5000]),
+        "batch_size": tune.choice([32, 64, 128, 256]),
+        "windows_batch_size": tune.choice([128, 256, 512, 1024]),
+        "loss": None,
+        "random_seed": tune.randint(1, 20),
+    }
+
+    def __init__(
+        self,
+        h,
+        loss=MAE(),
+        valid_loss=None,
+        config=None,
+        search_alg=BasicVariantGenerator(random_state=1),
+        num_samples=10,
+        time_budget=None,
+        refit_with_val=False,
+        cpus=None,
+        gpus=None,
+        verbose=False,
+        alias=None,
+        backend="ray",
+        callbacks=None,
+        ray_options=None,
+        optuna_options=None,
+    ):
+
+        # Define search space, input/output sizes
+        if config is None:
+            config = self.get_default_config(h=h, backend=backend)
+
+        super(AutoSRSNet, self).__init__(
+            cls_model=SRSNet,
             h=h,
             loss=loss,
             valid_loss=valid_loss,
