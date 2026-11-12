@@ -58,6 +58,7 @@ from neuralforecast.models import (
     TSMixerx,
     VanillaTransformer,
     XLinear,
+    XPatch,
     iTransformer,
     xLSTM,
 )
@@ -285,6 +286,8 @@ MODEL_FILENAME_DICT = {
     "autoxlstm": xLSTM,
     "xlinear": XLinear,
     "autoxlinear": XLinear,
+    "xpatch": XPatch,
+    "autoxpatch": XPatch,
 }
 
 
